@@ -105,56 +105,105 @@
     <script>
         const API_CHECK_REGEX = /\b(what|how|why|tell|describe|explain|can you|could you|would you)\b/i;
         
-        let recognition;
         let isActive = false;
         let openaiKey = '';
+        let mediaRecorder;
+        let audioChunks = [];
         
         const statusEl = document.getElementById('status');
         const outputEl = document.getElementById('output');
         const setupEl = document.getElementById('setup');
         const controlsEl = document.getElementById('controls');
-        
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            outputEl.innerHTML = "Your browser does not support the Web Speech API. Please use Google Chrome.";
-        } else {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
 
-            recognition.onstart = function() {
-                setStatus("🎤 Listening...", "listening");
-            };
+        function setStatus(text, type) {
+            statusEl.innerText = text;
+            statusEl.classList.remove("listening", "transcribing", "generating");
+            if(type) statusEl.classList.add(type);
+        }
 
-            recognition.onresult = async function(event) {
-                const text = event.results[0][0].transcript.trim();
-                console.log("Heard: ", text);
+        async function recordAndTranscribe() {
+            if (!isActive) return;
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
                 
-                if (API_CHECK_REGEX.test(text) || text.includes('?')) {
-                    setStatus("🤖 Generating guidance...", "generating");
-                    outputEl.innerText = `Question detected: "${text}"\n\nAnalyzing via OpenAI...`;
-                    await fetchGuidance(text);
-                } else {
-                    outputEl.innerText = `Heard: "${text}"\n(Not detected as a question, continuing to listen...)`;
-                    if (isActive) recognition.start();
-                }
-            };
+                mediaRecorder.ondataavailable = e => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    if (!isActive) return;
+                    
+                    setStatus("🧠 Transcribing...", "transcribing");
+                    
+                    // Create proper blob depending on what the browser generated
+                    const audioBlob = new Blob(audioChunks);
+                    audioChunks = [];
+                    
+                    // Release the microphone track immediately so it's not held hostage
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    const formData = new FormData();
+                    // Whisper auto-detects form formats natively most of the time!
+                    formData.append('file', audioBlob, 'audio.webm');
+                    formData.append('model', 'whisper-1');
+                    
+                    try {
+                        const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${openaiKey}` },
+                            body: formData
+                        });
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            outputEl.innerText = `Whisper API Error: ${data.error.message}`;
+                            setTimeout(() => { if (isActive) recordAndTranscribe(); }, 2000);
+                            return;
+                        }
 
-            recognition.onerror = function(event) {
-                console.error("Speech error: " + event.error);
-                if(event.error === 'no-speech' && isActive) {
-                    recognition.start();
-                } else {
-                    setStatus("Error: " + event.error, "");
-                }
-            };
-
-            recognition.onend = function() {
-                if (isActive && !statusEl.classList.contains("generating")) {
-                    recognition.start();
-                }
-            };
+                        const text = data.text ? data.text.trim() : "";
+                        if (text && text.length > 3) {
+                            console.log("Heard:", text);
+                            if (API_CHECK_REGEX.test(text) || text.includes('?')) {
+                                setStatus("🤖 Generating guidance...", "generating");
+                                outputEl.innerText = `Question detected: "${text}"\n\nAnalyzing via OpenAI...`;
+                                await fetchGuidance(text);
+                                return; // fetchGuidance will loop the recorder itself
+                            } else {
+                                outputEl.innerText = `Heard: "${text}"\n(Not detected as a question, continuous listening active...)`;
+                            }
+                        } else {
+                            outputEl.innerText = "No clear voice heard in the last 5 seconds...";
+                        }
+                    } catch(e) {
+                        console.error(e);
+                        outputEl.innerText = "Network Error: Could not connect to OpenAI Whisper API.";
+                    }
+                    
+                    // loop back for the next 5-second chunk if we didn't trigger ChatGPT
+                    if (isActive) {
+                        recordAndTranscribe();
+                    }
+                };
+                
+                setStatus("🎤 Listening...", "listening");
+                mediaRecorder.start();
+                
+                // Record for exactly 5 seconds, just like the desktop config
+                setTimeout(() => {
+                    if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+                }, 5000);
+                
+            } catch (err) {
+                console.error(err);
+                setStatus("Microphone Error", "");
+                outputEl.innerText = "Error accessing microphone. Make sure permissions are granted in your settings!";
+                isActive = false;
+                setupEl.style.display = 'flex';
+                controlsEl.style.display = 'none';
+            }
         }
 
         document.getElementById('startBtn').addEventListener('click', () => {
@@ -167,24 +216,20 @@
             isActive = true;
             setupEl.style.display = 'none';
             controlsEl.style.display = 'block';
-            outputEl.innerText = "Microphone activated. Start speaking!";
-            recognition.start();
+            outputEl.innerText = "Microphone activated. Securing cloud connection...";
+            recordAndTranscribe();
         });
 
         document.getElementById('stopBtn').addEventListener('click', () => {
             isActive = false;
-            recognition.stop();
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
             setupEl.style.display = 'flex';
             controlsEl.style.display = 'none';
             setStatus("Disconnected", "");
             outputEl.innerText = "Engine stopped.";
         });
-
-        function setStatus(text, type) {
-            statusEl.innerText = text;
-            statusEl.classList.remove("listening", "generating");
-            if(type) statusEl.classList.add(type);
-        }
 
         async function fetchGuidance(question) {
             const prompt = `You are an expert AI Interview Coach.
@@ -231,7 +276,7 @@ Format:
             }
             
             if (isActive) {
-                setTimeout(() => recognition.start(), 1000);
+                setTimeout(() => recordAndTranscribe(), 1000);
             }
         }
     </script>
