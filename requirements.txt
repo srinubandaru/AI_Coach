@@ -1,0 +1,7 @@
+sounddevice
+numpy
+scipy
+openai
+openai-whisper
+pyqt5
+flask

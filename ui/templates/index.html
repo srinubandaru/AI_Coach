@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview Coach</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 850px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 24px;
+            padding: 50px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-weight: 600;
+            font-size: 3rem;
+            margin: 0;
+            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: rgba(0, 242, 254, 0.15);
+            color: #00f2fe;
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 20px;
+            border: 1px solid rgba(0, 242, 254, 0.3);
+            transition: all 0.4s ease;
+        }
+
+        .status-badge.listening {
+            background: rgba(46, 204, 113, 0.15);
+            color: #2ecc71;
+            border-color: rgba(46, 204, 113, 0.3);
+            animation: pulse-green 2s infinite;
+        }
+
+        .status-badge.transcribing {
+            background: rgba(241, 196, 15, 0.15);
+            color: #f1c40f;
+            border-color: rgba(241, 196, 15, 0.3);
+            animation: pulse-yellow 2s infinite;
+        }
+
+        .status-badge.generating {
+            background: rgba(155, 89, 182, 0.15);
+            color: #9b59b6;
+            border-color: rgba(155, 89, 182, 0.3);
+            animation: pulse-purple 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(46, 204, 113, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+        }
+
+        @keyframes pulse-yellow {
+            0% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(241, 196, 15, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); }
+        }
+
+        @keyframes pulse-purple {
+            0% { box-shadow: 0 0 0 0 rgba(155, 89, 182, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(155, 89, 182, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(155, 89, 182, 0); }
+        }
+
+        .content-area {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            min-height: 250px;
+            font-size: 1.15rem;
+            line-height: 1.7;
+            color: #f8fafc;
+            transition: all 0.3s ease;
+            white-space: pre-wrap;
+        }
+
+        /* Abstract shapes */
+        .shape {
+            position: absolute;
+            filter: blur(90px);
+            z-index: -1;
+            border-radius: 50%;
+        }
+        .shape-1 {
+            top: -150px;
+            left: -150px;
+            width: 400px;
+            height: 400px;
+            background: #4facfe;
+            opacity: 0.3;
+        }
+        .shape-2 {
+            bottom: -150px;
+            right: -150px;
+            width: 500px;
+            height: 500px;
+            background: #00f2fe;
+            opacity: 0.2;
+        }
+    </style>
+</head>
+<body>
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1>AI Interview Coach</h1>
+            <div id="status" class="status-badge">Initializing...</div>
+        </div>
+        
+        <div id="output" class="content-area">Loading...</div>
+    </div>
+
+    <script>
+        async function updateState() {
+            try {
+                const response = await fetch('/state');
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('status');
+                statusEl.innerText = data.status;
+                
+                // Remove all color classes
+                statusEl.classList.remove("listening", "transcribing", "generating");
+                
+                if(data.status.includes("Listening")) {
+                    statusEl.classList.add("listening");
+                } else if(data.status.includes("Transcribing")) {
+                    statusEl.classList.add("transcribing");
+                } else if(data.status.includes("Generating")) {
+                    statusEl.classList.add("generating");
+                }
+
+                const outputEl = document.getElementById('output');
+                if (outputEl.innerHTML !== data.output) {
+                    outputEl.innerHTML = data.output;
+                }
+            } catch (e) {
+                console.error("Error fetching state:", e);
+                document.getElementById('status').innerText = "Disconnected";
+            }
+        }
+
+        // Fast poll for snappy updates
+        setInterval(updateState, 300);
+        updateState();
+    </script>
+</body>
+</html>
